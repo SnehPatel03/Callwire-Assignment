@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Callwire</title>
+<style>
+:root{--bg:#0c0e10;--panel:#14171a;--line:#262b30;--text:#e9e7e2;--dim:#8b929a;--accent:#f2b441;--good:#4fc58a;--warn:#e8a33d;--bad:#ef6b5f}
+@media (prefers-color-scheme:light){:root{--bg:#f6f4ef;--panel:#fff;--line:#e2ded4;--text:#1c1b19;--dim:#6d6a63;--accent:#a8650a;--good:#1d8a54;--warn:#a8650a;--bad:#c2372c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 "IBM Plex Sans",system-ui,sans-serif}
+a{color:var(--accent)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;border-bottom:1px solid var(--line)}
+header b{font-size:15px;letter-spacing:.04em}
+header small{color:var(--dim);font-size:12px}
+main{max-width:860px;margin:0 auto;padding:24px}
+.row{display:flex;gap:14px;align-items:baseline;padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.row:hover{background:var(--panel)}
+.row .q{color:var(--accent);font-size:13px;min-width:70px}
+.row .c{flex:1;font-weight:600}
+.row .m{color:var(--dim);font-size:12px}
+.row.new .c::after{content:"NEW";margin-left:8px;font-size:10px;color:var(--bg);background:var(--accent);padding:1px 6px;border-radius:3px}
+h1{font-size:24px;margin:8px 0 4px}
+h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:28px 0 8px}
+.meta{color:var(--dim);font-size:12px}
+.tldr{border-left:3px solid var(--accent);padding:2px 0 2px 14px;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:500}
+.v-full{color:var(--good)}.v-number_only{color:var(--warn)}.v-no{color:var(--bad)}
+.qa{margin:10px 0}.qa p{margin:2px 0}
+.empty{color:var(--dim);padding:24px 4px}
+button.back{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font:inherit}
+</style>
+</head>
+<body>
+<header><b class="mono">CALLWIRE</b><small class="mono" id="state">connecting…</small></header>
+<main id="main"></main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const arr = (v) => Array.isArray(v) ? v : (v ? [v] : []);
+const fresh = new Set();
+let list = [];
+
+async function loadList() {
+  list = await (await fetch("/v1/briefs")).json();
+  if (!location.hash) drawList();
+}
+function drawList() {
+  $("#main").innerHTML = list.length
+    ? list.map((x) => `<div class="row ${fresh.has(x.id) ? "new" : ""}" onclick="location.hash='${x.id}'">
+        <span class="q mono">${esc(x.quarter || "—")}</span><span class="c">${esc(x.company)}</span>
+        <span class="m mono">${esc(x.call_date)} · ${esc(x.source)}</span></div>`).join("")
+    : '<p class="empty">Nothing yet. The watcher is polling; summaries appear here when they finish.</p>';
+}
+const bullets = (items) => `<ul>${arr(items).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
+
+async function drawBrief(id) {
+  const s = await (await fetch("/v1/briefs/" + id)).json();
+  const tone = s.tone || {};
+  $("#main").innerHTML = `
+    <button class="back mono" onclick="location.hash=''">← all calls</button>
+    <h1>${esc(s.company)}</h1>
+    <div class="meta mono">${esc(s.quarter || "")} · call ${esc(s.call_date)} · <a href="${esc(s.source_url)}" target="_blank" rel="noreferrer">${esc(s.source)} filing</a> ·
+      <a href="/v1/briefs/${id}/markdown" target="_blank">markdown</a></div>
+    <div class="tldr">${bullets(s.tldr)}</div>
+    <h2>Management commentary</h2>${bullets(s.management_commentary)}
+    <h2>Guidance</h2>${bullets(s.guidance)}
+    <h2>Segments</h2>${bullets(arr(s.segment_performance).map((x) => `${x.segment}: ${x.notes}`))}
+    <h2>Key numbers</h2>
+    <table><tr><th>Metric<th>Scope<th>Value<th>Context<th>Check</tr>
+    ${arr(s.key_metrics).map((m) => `<tr><td>${esc(m.metric)}<td>${esc([m.entity, m.period].filter(Boolean).join(" · "))}<td>${esc(m.value)}<td>${esc(m.context)}
+      <td class="v-${esc(m.verified)} mono">${m.verified === "full" ? "verified" : m.verified === "number_only" ? "number only" : "unverified"}</tr>`).join("")}</table>
+    <h2>Notable Q&amp;A</h2>
+    ${arr(s.notable_qa).map((q) => `<div class="qa"><p><b>Q (${esc(q.asked_by)}):</b> ${esc(q.question)}</p><p><b>A (${esc(q.answered_by || "Management")}):</b> ${esc(q.answer)}</p></div>`).join("")}
+    <h2>Risks</h2>${bullets(s.risks)}
+    <h2>Tone: ${esc(tone.label)}</h2><p>${esc(tone.reason)}</p>`;
+  window.scrollTo(0, 0);
+}
+function route() { location.hash ? drawBrief(location.hash.slice(1)) : drawList(); }
+window.addEventListener("hashchange", route);
+
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/stream/briefs");
+  ws.onopen = () => ($("#state").textContent = "● live");
+  ws.onclose = () => { $("#state").textContent = "reconnecting…"; setTimeout(connect, 2000); };
+  ws.onmessage = (e) => {
+    const s = JSON.parse(e.data);
+    fresh.add(s.id);
+    list = [{ id: s.id, company: s.company, quarter: s.quarter, call_date: s.call_date, source: s.source }, ...list.filter((x) => x.id !== s.id)];
+    if (!location.hash) drawList();
+  };
+}
+loadList().then(route);
+connect();
+</script>
+</body>
+</html>

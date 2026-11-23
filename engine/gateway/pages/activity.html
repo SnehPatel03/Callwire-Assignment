@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Callwire · activity</title>
+<style>
+:root{--bg:#0c0e10;--panel:#14171a;--line:#262b30;--text:#e9e7e2;--dim:#8b929a;--accent:#f2b441;--good:#4fc58a;--bad:#ef6b5f;--info:#6aa9ff}
+@media (prefers-color-scheme:light){:root{--bg:#f6f4ef;--panel:#fff;--line:#e2ded4;--text:#1c1b19;--dim:#6d6a63;--accent:#a8650a;--good:#1d8a54;--bad:#c2372c;--info:#2b62c4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 "IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+header{padding:14px 24px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline}
+a{color:var(--accent)}
+#log{max-width:980px;margin:0 auto;padding:16px 24px}
+.ev{border-left:3px solid var(--dim);padding:6px 12px;margin:6px 0;background:var(--panel)}
+.chunk_done,.extracted{border-color:var(--good)}.merge_done,.merge_start{border-color:var(--info)}
+.saved{border-color:var(--accent)}.rate_wait,.llm_retry{border-color:var(--bad)}
+.ev small{color:var(--dim)}
+pre{white-space:pre-wrap;max-height:320px;overflow:auto;margin:6px 0 0;color:var(--dim)}
+</style>
+</head>
+<body>
+<header><b>CALLWIRE / ACTIVITY</b><span id="st">connecting…</span><a href="/">← briefs</a><a href="/v1/activity">raw JSON</a></header>
+<div id="log"></div>
+<script>
+const log = document.getElementById("log");
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function add(e) {
+  const { ts, kind, seq, company, source, reply, ...rest } = e;
+  const label = kind === "chunk_done" ? `chunk ${e.index}/${e.total}${e.cached ? " (cached)" : ""}`
+    : kind === "merge_done" ? (e.final ? "FINAL merge" : "merge") : kind;
+  log.insertAdjacentHTML("afterbegin",
+    `<div class="ev ${kind}"><b>${new Date(ts * 1000).toLocaleTimeString()}</b> · ${esc(company || "")} · ${esc(label)}
+     <small>${esc(JSON.stringify(rest).slice(0, 150))}</small>
+     ${reply ? `<details><summary>LLM reply</summary><pre>${esc(JSON.stringify(reply, null, 2))}</pre></details>` : ""}</div>`);
+}
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/stream/activity");
+  ws.onopen = () => (st.textContent = "● live");
+  ws.onclose = () => { st.textContent = "reconnecting…"; setTimeout(connect, 2000); };
+  ws.onmessage = (m) => add(JSON.parse(m.data));
+}
+connect();
+</script>
+</body>
+</html>
